@@ -1,7 +1,10 @@
 import { useForm } from "react-hook-form";
 import { useRouter } from 'next/router';
+import { useEffect } from "react";
 /*First Page is Always Sign in for Node Number*/
 export default function Index(){
+    
+    
     const router = useRouter();
     const {
 		register,
@@ -19,8 +22,9 @@ export default function Index(){
 
     const submitNode = async (data) => {
         console.log(data);
-        router.replace(`${data.node}`);
+        router.replace(`home`);
 
+        window.localStorage.setItem("node", data.node);
         reset();
         clearErrors();
     }
@@ -28,7 +32,6 @@ export default function Index(){
     const onError = () => {
         console.log(errors)
     };
-
 
     return (<>
         <div className=" font-rale w-screen h-screen flex flex-col place-content-center place-items-center">
