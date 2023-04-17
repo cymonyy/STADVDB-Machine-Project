@@ -125,6 +125,7 @@ export default function Home() {
       },
     ]);
   }
+  
 
   async function deleteMovies (data){
     const postData = {

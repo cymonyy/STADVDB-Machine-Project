@@ -2,6 +2,23 @@ import {query} from "../../lib/db"
 import mysql from "mysql2/promise";
 
 
+async function tryTarget(sql, source, target){
+    try{
+        let execute = await query({
+            query: sql,
+            values: [],
+            node: target
+        });
+
+    } catch(err){
+        let addLog = await query({
+            query: "insert into logs values (?,?)",
+            values: [target, sqlLog],
+            node: source
+        });
+    }
+}
+
 export default async function handler(req, res){
     try{
          /*
@@ -18,30 +35,55 @@ export default async function handler(req, res){
         */
 
         const node = req.body.node;
+        const id = req.body.id;
+        const name = req.body.name;
+        const year = req.body.year;
+        const rank = req.body.rank;
 
+        let target, recoverFrom;
+        var backlogs = [];
+        switch(node){
+            case "1": 
+                target = (parseInt(year) >= 1980) ? 2:3; 
+                recoverFrom = [2, 3];
+                break;
+            default: 
+                recoverFrom = [1];
+                target = 1; 
+                break;
+        }
+        
         //Step 1: Execute logs to node #
-        const backlog = await query({
-            query: "SELECT * from logs where node = (?)",
-            values: [node],
-            node: 0
-        });
-        console.log("backlogs", backlog);
-
-        if(backlog.length > 0){
-
-            console.log("IN backlog execution");
-
-            backlog.forEach(async (item)=>{
-                await query({
-                    query: item.statement,
-                    values: [],
-                    node: node
+        recoverFrom.forEach(async (num) => {
+            try{
+                var backlog = await query({
+                    query: "SELECT * from logs where node = (?)",
+                    values: [node],
+                    node: num
                 });
+
+                if(backlog.length > 0) backlogs.push(...backlog);
+            } catch (err){}
+        })
+        
+        console.log("backlogs", backlogs);
+
+        if(backlogs.length > 0){
+            console.log("IN backlog execution");
+            backlogs.forEach(async (item)=>{
+                try{
+                    await query({
+                        query: item.statement,
+                        values: [],
+                        node: node
+                    });
+                } catch(err){
+                }
             });
 
             console.log("pass backlog execution");
         }
-        else console.log("no backlogs at the moment")
+        else console.log("no backlogs at the moment");
 
         if(req.body.method === "READ"){
              //Step 2: Execute Query
@@ -60,10 +102,6 @@ export default async function handler(req, res){
             //Step 2: Execute Query
             //Get Highest ID and Increment
             console.log(node);
-            let name = req.body.name;
-            let year = req.body.year;
-            let rank = req.body.rank;
-
             let highest = await query({
                 query: "select id from movie_details order by id desc limit 1",
                 values: [],
@@ -95,6 +133,10 @@ export default async function handler(req, res){
                 movie_rank: rank
             }
 
+            //Step 3: Check if target is active and try execution. If false, add to logs of node
+            let sqlLog = `insert into movie_details values (${addMovie.insertId},${name},${year},${rank})`;
+            tryTarget(sqlLog, node, target);
+
             res.status(200).json({ response: { message: message, movie: movie } });
         }
 
@@ -102,7 +144,7 @@ export default async function handler(req, res){
             //Step 2: Execute Query
             let delMovie = await query({
                 query: "delete from movie_details where id = ?",
-                values: [req.body.id],
+                values: [id],
                 node: node
             });
 
@@ -115,19 +157,18 @@ export default async function handler(req, res){
               }
 
             let movie = {
-                id: req.body.id
+                id: id
             }
+
+            //Step 3: Check if target is active and try execution. If false, add to logs of node
+            let sqlLog = `delete from movie_details where id = ${id}`;
+            tryTarget(sqlLog, node, target);
 
             res.status(200).json({ response: { message: message, movie: movie } });
         }
 
         else if(req.body.method === "UPDATE"){
             //Step 2: Execute Query
-            let id = req.body.id;
-            let name = req.body.name;
-            let year = req.body.year;
-            let rank = req.body.rank;
-
             let updMovie = await query({
                 query: `update movie_details set movie_name = ?, movie_year = ?, movie_rank = ? where id = ?`,
                 values: [name, year, rank, id],
@@ -146,176 +187,15 @@ export default async function handler(req, res){
                 id: req.body.id
             }
 
+            //Step 3: Check if target is active and try execution. If false, add to logs of node
+            let sqlLog = `update movie_details set movie_name = ${name}, movie_year = ${year}, movie_rank = ${rank} where id = ${id}`;
+            tryTarget(sqlLog, node, target);
+
             res.status(200).json({ response: { message: message, movie: movie } });
         }
 
+        
     }catch(err){
         console.log(err);
     }
 }
-
-/**
- * 
- * export default async function handler(req, res){
-
-    try{
-        console.log("method", req.body);
-        
-        
-
-       
-       
-
-        console.log("pass source pool")
-
-        const logs = mysql.createPool({
-            host: process.env.MYSQL_HOST,
-            database: "mc02_transaction_logs",
-            user: process.env.MYSQL_USER,
-            password: process.env.MYSQL_PASSWORD,
-        });
-
-        console.log("pass logs pool")
-        
-        
-
-        
-        console.log("pass backlog execution");
-
-        if(req.body.method === "READ"){
-            let source = getPool(req.body.node);
-            //Step 2: Execute Query
-            const [movies] = await source.query(req.body.statement);
-            res.status(200).json({movies: movies});
-
-            source.releaseConnection(SourceBufferList);
-        }
-
-        if(req.body.method === "ADD"){
-            let source = getPool(req.body.node);
-            //Step 2: Execute Query
-            const [addMovie] = await source.query({
-                query: "INSERT INTO movie_details VALUES (?,?,?,?)",
-                values: [2, "hello", "1999", "1"]
-            });
-
-            res.status(200).json({movies: movies});
-        }
-
-        
-    }catch(err){
-        console.log(err)
-        res.status(200).json({movies: []});
-    }
-    
-   
-     * 
-     * 
-     * else if (req.body.method === "ADD"){
-
-            const name = req.body.name;
-            const year = req.body.year;
-            const rank = req.body.rank;
-
-            //Step 2: Execute Query
-            const [highest] = await source.query("select id from movie_details order by id desc limit 1");
-            console.log(highest);
-            let idNum = (highest === []) ? 1: (parseInt(highest[0].id) + 1);
-
-            const addedMovie = await source.execute({
-                query: "insert into movie_details values (?,?,?,?)",
-                values: [idNum, name, year, rank]
-            });
-
-            let message;
-            if(addedMovie.insertId) {
-                message = "Added Successfully"
-            }
-            else message = "Added Unsuccessfully"
-
-            let movie = {
-                id: addedMovie.insertId,
-                name: name,
-                year: year,
-                rank: rank
-            }
-
-            res.status(200).json({response: {message: message, movie: movie}});
-
-            //Step 3: Check if Target is Active
-        }
-        
-        else {
-
-            
-
-        }
-     *  if(req.method === "GET"){
-        
-        try{
-            //get logs to execute
-            const logs = await queryLogs({
-                query: `SELECT * FROM logs where node = ${req.body.node}`,
-                values: []
-            });
-
-            //execute logs to node #
-            if(logs) logs.forEach(async (element) => {
-                let garbage = await query({
-                    query: element.statement,
-                    values: [],
-                    connection: source
-                })
-            });
-
-            const results = await query({
-                query: "SELECT * from movie_details limit 10",
-                values: [],
-                connection: source
-            });
-            source.release();
-
-            res.status(200).json({movies: results});
-        }catch(err){
-            source.release();
-            console.log(err)
-        }
-
-    }
-     * if(req.method === "GET"){
-
-        
-
-        try{
-            const movies = await query({
-                query:"SELECT * FROM movie_details limit 10",
-                values:[]
-            });
-
-    
-            res.status(200).json({movies: movies});
-        }
-        catch(err){
-            res.status(200).json({movies: err});
-        }
-    }
-
-    if(req.method === "POST"){
-        try{
-            //get highest id and add 1
-            const highestID = await query({
-                query: "select movie_details.id from movie_details order by id desc limit 1",
-                values:[]
-            });
-            
-            const AddMovie = await query({
-                query: "insert "
-            })
-        }
-        catch(err){
-            console.log(err)
-        }
-    }
-     
-}
- */
