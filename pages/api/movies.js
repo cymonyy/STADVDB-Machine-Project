@@ -139,7 +139,7 @@ export default async function handler(req, res){
             console.log("confirm add");
 
             let message;
-            if (addMovie != null) {
+            if (addMovie.affectedRows>0) {
                 message = "success";
 
                 //sleep for concurrency
@@ -204,7 +204,7 @@ export default async function handler(req, res){
             console.log("confirm del");
             console.log(delMovie.affectedRows)
             
-            if (delMovie != null) {
+            if (delMovie.affectedRows>0) {
                 message = "success";
 
                 //sleep for concurrency
@@ -248,9 +248,11 @@ export default async function handler(req, res){
                 console.log("rollback");
               }
 
-            let movie = {
-                id: id
-            }
+                let movie = {
+                    movie_name: name,
+                    movie_year: year,
+                    movie_rank: rank
+                }
 
             res.status(200).json({ response: { message: message, movie: movie } });
         }
@@ -268,7 +270,7 @@ export default async function handler(req, res){
             console.log("confirm upd");
             console.log(updMovie.affectedRows)
 
-            if (updMovie != null) {
+            if (updMovie.affectedRows>0) {
                 message = "success";
 
                 //sleep for concurrency
@@ -310,9 +312,11 @@ export default async function handler(req, res){
                 console.log("confirm rollback");
               }
 
-            let movie = {
-                id: req.body.id
-            }
+                let movie = {
+                    movie_name: name,
+                    movie_year: year,
+                    movie_rank: rank
+                }
 
             
             res.status(200).json({ response: { message: message, movie: movie } });

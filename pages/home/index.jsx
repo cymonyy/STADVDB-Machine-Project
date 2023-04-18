@@ -1,12 +1,9 @@
-import Image from 'next/image'
 import { Inter } from 'next/font/google'
-import Table from 'react-bootstrap/Table';
-import Form from 'react-bootstrap/Form';
 import axios from 'axios';
 import { useForm, useFormState } from "react-hook-form";
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/router';
-import Select from "react-select";
+
+import getStorageValue from '../api/utils/getStorageValue';
 
 
 const inter = Inter({ subsets: ['latin'] })
@@ -15,16 +12,41 @@ const inter = Inter({ subsets: ['latin'] })
 
 export default function Home() {
 
+  const node = getStorageValue("node");
   
-  
-  //const [search, setSearch] = useState("");
-  const search = useRef();
+  const [search, setSearch] = useState("");
   const [movies, setMovies] = useState([]);
   const [open, setOpen] = useState(false);
-  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+ 
+  useEffect(()=>{},[search, open]);
+  //use server side props 
   useEffect(()=>{
-    router.query = {node: window.localStorage.getItem("node")};
-    console.log("router", router);
+    setLoading(true);
+    const getMovies = async () => {
+      const postData = {
+        method:"POST",
+        headers: {
+          "Content-Type":"application/json"
+        },
+        body: JSON.stringify({
+          node: node,
+          statement: "SELECT * FROM movie_details",
+          method: "READ",
+        })
+      };
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_URL}/api/movies`, 
+        postData
+      );
+      const response = await res.json();
+      console.log('i fire once');
+      setMovies(response.movies);
+      setOpen(true);
+      setLoading(false);
+    }
+
+    getMovies();
   },[]);
 
   const {
@@ -68,34 +90,13 @@ export default function Home() {
     }
   });
 
-  const getMovies = async () => {
-    const postData = {
-      method:"POST",
-      headers: {
-        "Content-Type":"application/json"
-      },
-      body: JSON.stringify({
-        node: router.query.node,
-        statement: "SELECT * FROM movie_details",
-        method: "READ",
-      })
-    };
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_URL}/api/movies`, 
-      postData
-    );
-    const response = await res.json();
-    console.log("test", response.movies);
-    setMovies(response.movies);
-    setOpen(true);
-  }
+  
 
   const addMovie = async (data) => {
     console.log(data);
 
     resetAdd();
     clearErrorsAdd();
-    setOpen(false);
 
     const postData = {
       method:"POST",
@@ -103,7 +104,7 @@ export default function Home() {
         "Content-Type":"application/json"
       },
       body: JSON.stringify({
-        node: router.query.node,
+        node: node,
         method: "ADD",
         name: data.name,
         year: parseInt(data.year).toString(),
@@ -120,8 +121,11 @@ export default function Home() {
     console.log(response);
     if (response.response.message !== "success") return;
     const newMovie = response.response.movie;
-
-    
+    setMovies([...movies, {
+      movie_name:newMovie.movie_name,
+      movie_year:newMovie.movie_year.toString(),
+      movie_rank:newMovie.movie_rank.toString()
+    }])
   }
 
   const deleteMovie = async (data) => {
@@ -129,14 +133,13 @@ export default function Home() {
 
     resetDel();
     clearErrorsDel();
-    setOpen(false);
     const postData = {
       method:"POST",
       headers: {
         "Content-Type":"application/json"
       },
       body: JSON.stringify({
-        node: router.query.node,
+        node: node,
         method: "DELETE",
         id: data.id,
         name: data.name,
@@ -153,20 +156,21 @@ export default function Home() {
     const response = await res.json();
     console.log(response);
     if (response.response.message !== "success") return;
+    const newMovie = response.response.movie;
+    setMovies(movies.filter((item)=>item.movie_name !== newMovie.movie_name && parseInt(item.movie_year) !== parseInt(newMovie.movie_year)));
   }
 
   const updateMovie = async (data) => {
     console.log(data);
     resetUpd();
     clearErrorsUpd();
-    setOpen(false);
     const postData = {
       method:"POST",
       headers: {
         "Content-Type":"application/json"
       },
       body: JSON.stringify({
-        node: router.query.node,
+        node: node,
         method: "UPDATE",
         id: data.id,
         name: data.name,
@@ -183,6 +187,23 @@ export default function Home() {
     const response = await res.json();
     console.log(response);
     if (response.response.message !== "success") return;
+    const newMovie = response.response.movie;
+    const moviesStateAfterUpdate = movies.map((item) => {
+      if (item.movie_name === newMovie.movie_name) {
+        const movieUpdated = {
+          ...item,
+          movie_year:newMovie.movie_year.toString(),
+          movie_rank:newMovie.movie_rank.toString()
+        };
+        return movieUpdated;
+      } else {
+        return {
+          ...item,
+        };
+      }
+    });
+
+    setMovies(moviesStateAfterUpdate);
 
   }
 
@@ -205,8 +226,7 @@ export default function Home() {
     {value: "SERIALIZABLE", label: "Serializable"},
   ];
 
-
-  
+  if(loading) return<><h1>Loading</h1></>
   return (
     <main className='w-full min-h-screen p-20 flex flex-col font-rale'>
       <div className="grid grid-cols-1 md:grid-cols-2">
@@ -228,12 +248,12 @@ export default function Home() {
         <div className='w-full grid grid-cols-2'>
           <input type="text" name="search" id="search-bar" placeholder='Search' autoComplete="off" 
             className='py-5 pl-10 pr-5 w-full focus:outline-none text-black text-lg font-semibold placeholder:font-normal placeholder:italic bg-gray-200 border rounded-full self-center' 
-            ref={search}
+            onChange={(e)=>{setSearch(e.target.value)}}
           />
           <div className="justify-self-end self-center">
             <button 
               className='py-2 px-20 bg-gray-700 hover:bg-gray-600 text-white font-semibold border rounded-3xl text-xl'
-              onClick={open ? ()=>{setOpen(false)}:()=>{getMovies()}}
+              onClick={open ? ()=>{setOpen(false)}:()=>{setOpen(true)}}
             >
               {open ? "Hide":"Get"} Movies
             </button>
@@ -250,7 +270,7 @@ export default function Home() {
             <div className='mt-5 space-y-2 w-full h-full max-h-screen overflow-y-scroll'>
               {
                 movies.filter((item) => {
-                  if(search != null) return search.current.value.trim().toLowerCase() === '' ? item : item.movie_name.toLowerCase().includes(search.toLowerCase());  
+                  if(search != null) return search.toLowerCase() === '' ? item : item.movie_name.toLowerCase().includes(search.toLowerCase());  
                   else return item;
                 }).map((item, index) => {
                   return (<>
@@ -417,14 +437,4 @@ export default function Home() {
       </div>
     </main>
   )
-
-
-
-  /*
-  
-
-  
-
-  
-  */
-}
+};
