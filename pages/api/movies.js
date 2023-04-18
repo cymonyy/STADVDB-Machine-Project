@@ -2,45 +2,19 @@ import {query} from "../../lib/db"
 import mysql from "mysql2/promise";
 
 
-async function tryTarget(sql, source, target){
-    try{
-        let execute = await query({
-            query: sql,
-            values: [],
-            node: target
-        });
 
-    } catch(err){
-        let addLog = await query({
-            query: "insert into logs values (?,?)",
-            values: [target, sqlLog],
-            node: source
-        });
-    }
-}
 
 export default async function handler(req, res){
     try{
-         /*
-            Add movies from to 2:
-            source = node 2
-            target = node center
-
-            1) execute logs to source
-            2) execute query to source
-            3) check if target is active
-                if yes, execute query to target
-                if no, add log (targer node, statement)
-            LOOP
-        */
-
+        
         const node = req.body.node;
         const id = req.body.id;
         const name = req.body.name;
-        const year = req.body.year;
-        const rank = req.body.rank;
+        const year = parseInt(req.body.year);
+        const rank = parseFloat(parseFloat(req.body.rank).toFixed(2));
 
         let target, recoverFrom;
+        var message;
         var backlogs = [];
         switch(node){
             case "1": 
@@ -52,149 +26,297 @@ export default async function handler(req, res){
                 target = 1; 
                 break;
         }
-        
+
+        console.log(recoverFrom);
+
         //Step 1: Execute logs to node #
-        recoverFrom.forEach(async (num) => {
+        for(let i = 0; i < recoverFrom.length; i++){
             try{
-                var backlog = await query({
-                    query: "SELECT * from logs where node = (?)",
+                let num = recoverFrom[i];
+                console.log(num);
+                //get backlog from recovery logs 
+                let backlog = await query({
+                    query: "SELECT * from logs where target = (?)",
                     values: [node],
-                    node: num
+                    node: num.toString()
                 });
+                await new Promise(res=> setTimeout(res,200));
+                
+                console.log("inner backlog ", num, backlog);
 
-                if(backlog.length > 0) backlogs.push(...backlog);
-            } catch (err){}
-        })
-        
-        console.log("backlogs", backlogs);
-
-        if(backlogs.length > 0){
-            console.log("IN backlog execution");
-            backlogs.forEach(async (item)=>{
-                try{
-                    await query({
-                        query: item.statement,
-                        values: [],
-                        node: node
-                    });
-                } catch(err){
-                }
-            });
-
-            console.log("pass backlog execution");
+                if(backlog.length > 0){
+                    for(let j = 0; j < backlog.length; j++){
+                        let item = backlog[j];
+                         //delete each backlogs in recovery 
+                         await query({
+                            query: "delete from logs where target = ? and statement = ?",
+                            values: [node, item.statement],
+                            node: num.toString()
+                        });
+                        await new Promise(res=> setTimeout(res,100));
+                        console.log("confirm delete " + (j+1));
+                    }   
+                    backlogs.push(...backlog);
+                } else console.log("No backlogs inside node " + num + " at the moment.");
+            } catch (err){console.log(err)}
         }
-        else console.log("no backlogs at the moment");
+        await new Promise(res=> setTimeout(res,200));
+     
+
+        console.log("backlogs",backlogs);
+        for (let i = 0; i < backlogs.length; i++){
+            let item = backlogs[i];
+            try{
+                //run backlog to source node
+                await query({
+                    query: item.statement,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200));
+                console.log("confirm execute " + (i+1));
+
+            } catch(err){
+                console.log(err);
+                //add back to backlogs if error on add
+                await query({
+                    query: "insert into logs values (?,?)",
+                    values: [node, item.statement],
+                    node: parseInt(item.target).toString()
+                });
+                await new Promise(res=> setTimeout(res,200));
+                console.log("add to logs " + (i+1));
+            }
+        }
+        
+        let isolationLevel = await query({
+            query: `set transaction isolation level ${"READ COMMITTED"}`,
+            values: [],
+            node: node
+        });
+        await new Promise(res=> setTimeout(res,200))
 
         if(req.body.method === "READ"){
-             //Step 2: Execute Query
-             console.log(node);
-             const movies = await query({
+            //Step 2: Execute Query
+            console.log(node);
+            const movies = await query({
                 query: req.body.statement,
                 values: [],
                 node: node
-             });
+            });
+            await new Promise(res=> setTimeout(res,500))
 
-             console.log(movies);
-             res.status(200).json({movies: movies});
-        }
-
-        else if (req.body.method === "ADD"){
-            //Step 2: Execute Query
-            //Get Highest ID and Increment
-            console.log(node);
-            let highest = await query({
-                query: "select id from movie_details order by id desc limit 1",
+            //sleep for concurrency
+            isolationLevel = await query({
+                query: `do sleep(10)`,
                 values: [],
                 node: node
             });
-            let idNum = (highest.length > 0) ? (parseInt(highest[0].id) + 1) : 1;
+            await new Promise(res=> setTimeout(res,200))
 
-            console.log(idNum);
-
-            //Add The Item
-            let addMovie = await query({
-                query: "insert into movie_details values (?,?,?,?)",
-                values: [idNum, name, year, rank],
+            //sleep for concurrency
+            isolationLevel = await query({
+                query: `commit`,
+                values: [],
                 node: node
             });
+            await new Promise(res=> setTimeout(res,200))
 
+            console.log(movies);
+            res.status(200).json({movies: movies});
+        }
+
+        else if (req.body.method === "ADD"){
+            console.log("in add");
+            //Step 2: Execute Query
+            //Add The Item
+            let addMovie = await query({
+                query: "insert into movie_details values (?,?,?)",
+                values: [name, year, rank],
+                node: node
+            });
+            await new Promise(res=> setTimeout(res,500))
+            console.log("confirm add");
 
             let message;
-            if (addMovie.insertId) {
+            if (addMovie != null) {
                 message = "success";
-              } else {
+
+                //sleep for concurrency
+                isolationLevel = await query({
+                    query: `do sleep(10)`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+
+                console.log("confirm sleep");
+
+                //commit concurrency
+                isolationLevel = await query({
+                    query: `commit`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                
+                console.log("confirm commit");
+
+                //Step 3: Check if target is active and try execution. If false, add to logs of node
+                let sqlLog = `insert into movie_details values ('${name}',${year},${rank})`;
+                let addLog = await query({
+                    query: "insert into logs values (?,?,?)",
+                    values: [node, target, sqlLog],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,500))
+                console.log("confirm add log");
+            } else {
                 message = "error";
-              }
+                //rollback concurrency
+                isolationLevel = await query({
+                    query: `rollback`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("rollback");
+            }
 
             let movie = {
-                id: addMovie.insertId,
                 movie_name: name,
                 movie_year: year,
                 movie_rank: rank
             }
-
-            //Step 3: Check if target is active and try execution. If false, add to logs of node
-            let sqlLog = `insert into movie_details values (${addMovie.insertId},${name},${year},${rank})`;
-            tryTarget(sqlLog, node, target);
-
             res.status(200).json({ response: { message: message, movie: movie } });
         }
 
         else if(req.body.method === "DELETE"){
+            console.log("in del");
             //Step 2: Execute Query
+            let sql = `delete from movie_details where movie_name = "${name}" and movie_year = ${year}`;
             let delMovie = await query({
-                query: "delete from movie_details where id = ?",
-                values: [id],
+                query: sql,
+                values: [],
                 node: node
             });
-
+            await new Promise(res=> setTimeout(res,500))
+            console.log("confirm del");
             console.log(delMovie.affectedRows)
-
-            if (delMovie.affectedRows) {
+            
+            if (delMovie != null) {
                 message = "success";
+
+                //sleep for concurrency
+                isolationLevel = await query({
+                    query: `do sleep(10)`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("confirm sleep");
+
+                //commit concurrency
+                isolationLevel = await query({
+                    query: `commit`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("confirm commit");
+
+                //Step 3: Check if target is active and try execution. If false, add to logs of node
+                let sqlLog = `delete from movie_details where movie_name = "${name}" and movie_year = ${year}`;
+                let addLog = await query({
+                    query: "insert into logs values (?,?,?)",
+                    values: [node, target, sqlLog],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,500))
+                console.log("confirm add log");
+
               } else {
                 message = "error";
+
+                //rollback concurrency
+                isolationLevel = await query({
+                    query: `rollback`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("rollback");
               }
 
             let movie = {
                 id: id
             }
 
-            //Step 3: Check if target is active and try execution. If false, add to logs of node
-            let sqlLog = `delete from movie_details where id = ${id}`;
-            tryTarget(sqlLog, node, target);
-
             res.status(200).json({ response: { message: message, movie: movie } });
         }
 
         else if(req.body.method === "UPDATE"){
+            console.log("in upd");
             //Step 2: Execute Query
+            let sql = `update movie_details set movie_year = ${year}, movie_rank = ${rank} where movie_name = "${name}" `
             let updMovie = await query({
-                query: `update movie_details set movie_name = ?, movie_year = ?, movie_rank = ? where id = ?`,
-                values: [name, year, rank, id],
+                query: sql,
+                values: [year, rank, name],
                 node: node
             });
-
+            await new Promise(res=> setTimeout(res,500))
+            console.log("confirm upd");
             console.log(updMovie.affectedRows)
 
-            if (updMovie.affectedRows) {
+            if (updMovie != null) {
                 message = "success";
+
+                //sleep for concurrency
+                isolationLevel = await query({
+                    query: `do sleep(10)`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("confirm sleep");
+
+                //commit concurrency
+                isolationLevel = await query({
+                    query: `commit`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("confirm commit");
+
+                //Step 3: Check if target is active and try execution. If false, add to logs of node
+                let sqlLog = `update movie_details set movie_year = ${year}, movie_rank = ${rank} where movie_name = "${name}"`;
+                let addLog = await query({
+                    query: "insert into logs values (?,?,?)",
+                    values: [node, target, sqlLog],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,500))
+                console.log("confirm add log");
               } else {
                 message = "error";
+                //rollback concurrency
+                isolationLevel = await query({
+                    query: `rollback`,
+                    values: [],
+                    node: node
+                });
+                await new Promise(res=> setTimeout(res,200))
+                console.log("confirm rollback");
               }
 
             let movie = {
                 id: req.body.id
             }
 
-            //Step 3: Check if target is active and try execution. If false, add to logs of node
-            let sqlLog = `update movie_details set movie_name = ${name}, movie_year = ${year}, movie_rank = ${rank} where id = ${id}`;
-            tryTarget(sqlLog, node, target);
-
+            
             res.status(200).json({ response: { message: message, movie: movie } });
         }
-
-        
     }catch(err){
         console.log(err);
     }

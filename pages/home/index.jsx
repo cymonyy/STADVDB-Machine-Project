@@ -4,8 +4,9 @@ import Table from 'react-bootstrap/Table';
 import Form from 'react-bootstrap/Form';
 import axios from 'axios';
 import { useForm, useFormState } from "react-hook-form";
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
+import Select from "react-select";
 
 
 const inter = Inter({ subsets: ['latin'] })
@@ -14,6 +15,12 @@ const inter = Inter({ subsets: ['latin'] })
 
 export default function Home() {
 
+  
+  
+  //const [search, setSearch] = useState("");
+  const search = useRef();
+  const [movies, setMovies] = useState([]);
+  const [open, setOpen] = useState(false);
   const router = useRouter();
   useEffect(()=>{
     router.query = {node: window.localStorage.getItem("node")};
@@ -61,16 +68,7 @@ export default function Home() {
     }
   });
 
-  
-
-  const [movies, setMovies] = useState([]);
-  useEffect(()=>{
-    getMovies()
-  },[])
-
-  const [search, setSearch] = useState("");
-
-  async function getMovies(){
+  const getMovies = async () => {
     const postData = {
       method:"POST",
       headers: {
@@ -79,7 +77,7 @@ export default function Home() {
       body: JSON.stringify({
         node: router.query.node,
         statement: "SELECT * FROM movie_details",
-        method: "READ"
+        method: "READ",
       })
     };
     const res = await fetch(
@@ -89,9 +87,16 @@ export default function Home() {
     const response = await res.json();
     console.log("test", response.movies);
     setMovies(response.movies);
+    setOpen(true);
   }
 
-  async function addMovies(data){
+  const addMovie = async (data) => {
+    console.log(data);
+
+    resetAdd();
+    clearErrorsAdd();
+    setOpen(false);
+
     const postData = {
       method:"POST",
       headers: {
@@ -101,8 +106,8 @@ export default function Home() {
         node: router.query.node,
         method: "ADD",
         name: data.name,
-        year: data.year,
-        rank: data.rank
+        year: parseInt(data.year).toString(),
+        rank: parseFloat(data.rank).toFixed(2),
       })
     };
 
@@ -112,22 +117,19 @@ export default function Home() {
     );
 
     const response = await res.json();
-
+    console.log(response);
     if (response.response.message !== "success") return;
     const newMovie = response.response.movie;
-    setMovies([
-      ...products,
-      {
-        id: newMovie.id,
-        movie_name: newMovie.movie_name,
-        movie_year: newMovie.movie_year,
-        movie_rank: newMovie.movie_rank
-      },
-    ]);
-  }
-  
 
-  async function deleteMovies (data){
+    
+  }
+
+  const deleteMovie = async (data) => {
+    console.log(data);
+
+    resetDel();
+    clearErrorsDel();
+    setOpen(false);
     const postData = {
       method:"POST",
       headers: {
@@ -138,8 +140,8 @@ export default function Home() {
         method: "DELETE",
         id: data.id,
         name: data.name,
-        year: data.year,
-        rank: data.rank
+        year: parseInt(data.year).toString(),
+        rank: parseFloat(data.rank).toFixed(2),
       })
     };
 
@@ -149,13 +151,15 @@ export default function Home() {
     );
 
     const response = await res.json();
-
+    console.log(response);
     if (response.response.message !== "success") return;
-    const newMovie = response.response.movie;
-    setMovies(movies.filter((item)=>item.id !== newMovie.id));
   }
 
-  async function updateMovies (data){
+  const updateMovie = async (data) => {
+    console.log(data);
+    resetUpd();
+    clearErrorsUpd();
+    setOpen(false);
     const postData = {
       method:"POST",
       headers: {
@@ -166,8 +170,8 @@ export default function Home() {
         method: "UPDATE",
         id: data.id,
         name: data.name,
-        year: data.year,
-        rank: data.rank
+        year: parseInt(data.year).toString(),
+        rank: parseFloat(data.rank).toFixed(2),
       })
     };
 
@@ -177,34 +181,9 @@ export default function Home() {
     );
 
     const response = await res.json();
-
+    console.log(response);
     if (response.response.message !== "success") return;
-  }
 
-
-
-  const addMovie = (data) => {
-    console.log(data);
-    addMovies(data);
-    resetAdd();
-    clearErrorsAdd();
-    router.reload(window.location.pathname);
-  }
-
-  const deleteMovie = (data) => {
-    console.log(data);
-    deleteMovies(data);
-    resetDel();
-    clearErrorsDel();
-    router.reload(window.location.pathname);
-  }
-
-  const updateMovie = (data) => {
-    console.log(data);
-    updateMovies(data);
-    resetUpd();
-    clearErrorsUpd();
-    router.reload(window.location.pathname);
   }
 
   const errorOnAdd = (error) => {
@@ -219,6 +198,15 @@ export default function Home() {
     console.log(error);
   }
 
+  const paymentOptions = [
+    {value: "READ COMMITTED", label: "Read Committed"}, 
+    {value: "READ UNCOMMITTED", label:"Read Uncommitted"}, 
+    {value: "REPEATABLE READ", label: "Repeatable Read"},
+    {value: "SERIALIZABLE", label: "Serializable"},
+  ];
+
+
+  
   return (
     <main className='w-full min-h-screen p-20 flex flex-col font-rale'>
       <div className="grid grid-cols-1 md:grid-cols-2">
@@ -237,11 +225,49 @@ export default function Home() {
 
       <div className="w-full mt-10 flex flex-col h-full"> 
         
-        <input type="text" name="search" id="search-bar" placeholder='Search' autoComplete="off" 
-          className='py-5 pl-10 pr-5 w-1/2 focus:outline-none text-black text-lg font-semibold placeholder:font-normal placeholder:italic bg-gray-200 border rounded-full self-center' 
-          onChange={(e)=>{setSearch(e.target.value)}}
-        />
+        <div className='w-full grid grid-cols-2'>
+          <input type="text" name="search" id="search-bar" placeholder='Search' autoComplete="off" 
+            className='py-5 pl-10 pr-5 w-full focus:outline-none text-black text-lg font-semibold placeholder:font-normal placeholder:italic bg-gray-200 border rounded-full self-center' 
+            ref={search}
+          />
+          <div className="justify-self-end self-center">
+            <button 
+              className='py-2 px-20 bg-gray-700 hover:bg-gray-600 text-white font-semibold border rounded-3xl text-xl'
+              onClick={open ? ()=>{setOpen(false)}:()=>{getMovies()}}
+            >
+              {open ? "Hide":"Get"} Movies
+            </button>
+          </div>
+        </div>
 
+        {
+          open && (<>
+            <div className='mt-10 grid grid-cols-3 text-center text-lg font-bold space-x-5'>
+              <div className='p-5 bg-emerald-300'>Name</div>
+              <div className='p-5 bg-emerald-300'>Year</div>
+              <div className='p-5 bg-emerald-300'>Rank</div>
+            </div>
+            <div className='mt-5 space-y-2 w-full h-full max-h-screen overflow-y-scroll'>
+              {
+                movies.filter((item) => {
+                  if(search != null) return search.current.value.trim().toLowerCase() === '' ? item : item.movie_name.toLowerCase().includes(search.toLowerCase());  
+                  else return item;
+                }).map((item, index) => {
+                  return (<>
+                    <div key={index} className='grid grid-cols-3 text-center space-x-5 hover:bg-gray-100 hover:cursor-pointer'>
+                      <p className='p-5'>{item.movie_name}</p>
+                      <p className='p-5'>{item.movie_year}</p>
+                      <p className='p-5'>{parseFloat(item.movie_rank).toFixed(2)}</p>
+                    </div>
+                  </>)
+                })
+              }
+            </div>
+          </>)
+        }
+        
+
+        <hr className='mt-5' />
         <p className='mt-10 font-bold'>You can add a movie here: </p>
         <form onSubmit={handleAdd(addMovie, errorOnAdd)} className='mt-2 flex flex-col'>
           <div className='grid grid-cols-3 space-x-5'>
@@ -283,37 +309,14 @@ export default function Home() {
           
         </form>
 
-        <div className='mt-10 grid grid-cols-4 text-center text-lg font-bold space-x-5'>
-            <div className='p-5 bg-emerald-300'>Movie ID</div>
-            <div className='p-5 bg-emerald-300'>Name</div>
-            <div className='p-5 bg-emerald-300'>Year</div>
-            <div className='p-5 bg-emerald-300'>Rank</div>
-        </div>
+        
 
-        <div className='mt-2 space-y-2 w-full h-full max-h-screen overflow-y-scroll'>
-          {
-            movies.filter((item) => {
-              return search.toLowerCase() === '' ? item : item.movie_name.toLowerCase().includes(search.toLowerCase());  
-            }).map((item) => {
-              return (<>
-                <div key={item.id} className='grid grid-cols-4 text-center space-x-5 hover:bg-gray-100 hover:cursor-pointer'>
-                  <p className='p-5'>{item.id}</p>
-                  <p className='p-5'>{item.movie_name}</p>
-                  <p className='p-5'>{item.movie_year}</p>
-                  <p className='p-5'>{parseFloat(item.movie_rank).toFixed(2)}</p>
-                </div>
-              </>)
-            })
-          }
-        </div>
+        
 
         <hr className='mt-5' />
         <p className='mt-5 font-bold'>You can delete a movie here: </p>
         <form onSubmit={handleDel(deleteMovie, errorOnDel)} className='mt-2 flex flex-col'>
-          <div className='grid grid-cols-4 space-x-5'>
-            <input type="text" className='py-2 px-5 text-black font-semibold placeholder:font-normal placeholder:italic focus:outline-none border rounded-lg' placeholder='Movie ID' autoComplete="off" 
-                {...registerDel("id", {required: true, pattern: new RegExp("^[0-9]*$")})}
-            />
+          <div className='grid grid-cols-3 space-x-5'>
             <input type="text" className='py-2 px-5 text-black font-semibold placeholder:font-normal placeholder:italic focus:outline-none border rounded-lg' placeholder='Name' autoComplete="off" 
               {...registerDel("name", {required: true})}
             />
@@ -358,16 +361,9 @@ export default function Home() {
         <hr className='mt-10' />
         <p className='mt-5 font-bold'>You can update a movie here: </p>
         <form onSubmit={handleUpd(updateMovie, errorOnUpd)} className='mt-2 flex flex-col'>
-          <div className='grid grid-cols-4 space-x-5'>
+          <div className='grid grid-cols-3 space-x-5'>
             <div>
-              <p className='mb-1'>Movie ID <span className='font-bold'>to update</span></p>
-              <input type="text" className='w-full py-2 px-5 text-black font-semibold placeholder:font-normal placeholder:italic focus:outline-none border rounded-lg' placeholder='Movie ID' autoComplete="off" 
-                  {...registerUpd("id", {required: true, pattern: new RegExp("^[0-9]*$")})}
-              />
-            </div>
-            
-            <div>
-              <p className='mb-1'><span className='font-bold'>New</span> movie name</p>
+              <p className='mb-1'>Movie Name <span className='font-bold'> to update</span></p>
               <input type="text" className='w-full py-2 px-5 text-black font-semibold placeholder:font-normal placeholder:italic focus:outline-none border rounded-lg' placeholder='Name' autoComplete="off" 
                 {...registerUpd("name", {required: true})}
               />
