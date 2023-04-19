@@ -90,7 +90,7 @@ export default async function handler(req, res){
         }
         
         let isolationLevel = await query({
-            query: `set transaction isolation level ${"READ COMMITTED"}`,
+            query: `set transaction isolation level ${"SERIALIZABLE"}`,
             values: [],
             node: node
         });

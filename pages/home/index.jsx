@@ -2,7 +2,7 @@ import { Inter } from 'next/font/google'
 import axios from 'axios';
 import { useForm, useFormState } from "react-hook-form";
 import { useEffect, useRef, useState } from 'react';
-
+import useInterval from '../api/utils/useInterval';
 import getStorageValue from '../api/utils/getStorageValue';
 
 
@@ -23,31 +23,37 @@ export default function Home() {
   //use server side props 
   useEffect(()=>{
     setLoading(true);
-    const getMovies = async () => {
-      const postData = {
-        method:"POST",
-        headers: {
-          "Content-Type":"application/json"
-        },
-        body: JSON.stringify({
-          node: node,
-          statement: "SELECT * FROM movie_details",
-          method: "READ",
-        })
-      };
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_URL}/api/movies`, 
-        postData
-      );
-      const response = await res.json();
-      console.log('i fire once');
-      setMovies(response.movies);
-      setOpen(true);
-      setLoading(false);
-    }
-
     getMovies();
+    setLoading(false);
   },[]);
+
+  useInterval(()=>{
+    getMovies();
+  }, 70000);
+
+  const getMovies = async () => {
+    
+    const postData = {
+      method:"POST",
+      headers: {
+        "Content-Type":"application/json"
+      },
+      body: JSON.stringify({
+        node: node,
+        statement: "SELECT * FROM movie_details",
+        method: "READ",
+      })
+    };
+    const res = await fetch(
+      `/api/movies`, 
+      postData
+    );
+    const response = await res.json();
+    console.log('i fire once');
+    setMovies(response.movies);
+    setOpen(true);
+    
+  }
 
   const {
 		register:registerAdd,
@@ -113,7 +119,7 @@ export default function Home() {
     };
 
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_URL}/api/movies`, 
+      `/api/movies`, 
       postData
     );
 
@@ -149,7 +155,7 @@ export default function Home() {
     };
 
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_URL}/api/movies`, 
+      `/api/movies`, 
       postData
     );
 
@@ -180,7 +186,7 @@ export default function Home() {
     };
 
     const res = await fetch(
-      `${process.env.NEXT_PUBLIC_URL}/api/movies`, 
+      `/api/movies`, 
       postData
     );
 
